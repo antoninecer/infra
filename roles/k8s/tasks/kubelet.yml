@@ -1,0 +1,18 @@
+---
+
+- block:
+  - name: Set KUBELET_EXTRA_ARGS if is empty
+    lineinfile:
+      path: /etc/default/kubelet
+      regexp: '^KUBELET_EXTRA_ARGS=$'
+      line: 'KUBELET_EXTRA_ARGS="--resolv-conf=/etc/resolv.conf --cgroup-driver={{ k8s_cgroup_type }}"'
+      backrefs: yes
+      create: yes
+  - name: Restart kubelet service
+    service:
+      name: 'kubelet.service'
+      state: restarted
+      enabled: yes
+  when: 
+    - ansible_distribution | lower == "debian"
+    - ansible_distribution_major_version | int <= 12

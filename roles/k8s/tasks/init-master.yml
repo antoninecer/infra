@@ -1,0 +1,35 @@
+---
+
+# FIRST INICIALZE
+- name: Initialize Kubernetes cluster (with inline log fail)
+  ansible.builtin.shell: |
+    kubeadm init \
+      --apiserver-advertise-address='{{ k8s_api_bind_address }}' \
+      --control-plane-endpoint='{{ k8s_control_plane_endpoint }}:6443' \
+      --pod-network-cidr='{{ k8s_internal_network }}' \
+      --apiserver-cert-extra-sans='{{ k8s_apiserver_cert_extra_sans | join(",") }}' \
+      --ignore-preflight-errors={{ k8s_init_add_ignore_options }} \
+      --v=5 >> /root/kubeadm_output.log 2>&1 || (echo 'INIT FAILED:' && cat /root/kubeadm_output.log && exit 1)
+  when: not k8s_installed
+
+# GET NEW TOKEN FOR ANOTHER MASTERS
+- name: Inicializing kubernetes cluster - get join token
+  shell: kubeadm token create --print-join-command | awk '{ print $5" "$7 }'
+  register: kubeadm_token_register
+  when: k8s_cluster_exists_new_master == True or k8s_cluster_exists_new_worker == True
+
+- include_tasks: pki-pack.yml
+  when: k8s_cluster_exists_new_master == True
+
+- set_fact:
+    k8s_kubeadm_init_token_key: "{{ kubeadm_token_register.stdout.split(' ')[0] }}"
+    k8s_kubeadm_init_token_sha256: "{{ kubeadm_token_register.stdout.split(' ')[1] }}"
+  when: k8s_cluster_exists_new_master == True or k8s_cluster_exists_new_worker == True
+
+- shell: "cat /etc/kubernetes/admin.conf"
+  register: _k8s_kubeadm_admin_conf_register
+  changed_when: False
+  check_mode: False
+
+- set_fact:
+    k8s_kubeadm_admin_conf: "{{ _k8s_kubeadm_admin_conf_register.stdout }}"

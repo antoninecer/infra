@@ -1,0 +1,36 @@
+---
+
+- name: Save admin.conf to worker
+  copy:
+    content: "{{ k8s_kubeadm_admin_conf }}"
+    dest: /etc/kubernetes/admin.conf
+
+- name: Copy shutdown systemd service file into place for systemd.
+  template:
+    src: k8s-shutdown.service.j2
+    dest: /etc/systemd/system/k8s-shutdown.service
+    owner: root
+    group: root
+    mode: 0644
+
+- name: Copy reboot systemd service file into place for systemd.
+  template:
+    src: k8s-reboot.service.j2
+    dest: /etc/systemd/system/k8s-reboot.service
+    owner: root
+    group: root
+    mode: 0644
+
+- name: Enable service k8s-shutdown
+  service:
+    name: k8s-shutdown
+    state: stopped
+    enabled: yes
+    daemon_reload: yes
+
+- name: Enable service k8s-reboot
+  service:
+    name: k8s-reboot
+    state: stopped
+    enabled: yes
+    daemon_reload: yes

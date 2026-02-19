@@ -1,0 +1,13 @@
+---
+
+- name: Restart kubelet service
+  include_tasks : handlers/kubelet.yml
+  loop: "{{ ansible_play_batch | list | sort }}"
+  loop_control:
+    pause: 5
+
+- name: Restart containerd service
+  include_tasks : handlers/containerd.yml
+  loop: "{{ ansible_play_batch | list | sort }}"
+  loop_control:
+    pause: 5

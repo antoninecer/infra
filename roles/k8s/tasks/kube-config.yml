@@ -1,0 +1,73 @@
+---
+
+- name: "Get cluster certificate-authority-data on the server"
+  shell: "kubectl --kubeconfig /etc/kubernetes/admin.conf config view --minify --raw --output 'jsonpath={..cluster.certificate-authority-data}'"
+  register: _k8s_api_certificate_authority_data_server
+  changed_when: False
+  check_mode: False
+
+- name: "Get user client-certificate-data on the server"
+  shell: "kubectl --kubeconfig /etc/kubernetes/admin.conf config view --minify --raw --output 'jsonpath={..user.client-certificate-data}'"
+  register: _k8s_api_client_certificate_data_server
+  changed_when: False
+  check_mode: False
+
+- name: "Get user client-key-data on the server"
+  shell: "kubectl --kubeconfig /etc/kubernetes/admin.conf config view --minify --raw --output 'jsonpath={..user.client-key-data}'"
+  register: _k8s_api_client_key_data_server
+  changed_when: False
+  check_mode: False
+
+- stat: path="~/.kube/config"
+  register: _k8s_local_config_exist
+  become: false
+  delegate_to: localhost
+  changed_when: False
+
+- name: "Get user client-key-data on the client"
+  shell: "kubectl --kubeconfig ~/.kube/config config view --raw --output 'jsonpath={.users[?(@.name == \"{{ k8s_context }}\" )].user.client-key-data}'"
+  register: _k8s_api_client_key_data_client
+  become: false
+  check_mode: False
+  changed_when: False
+  delegate_to: localhost
+  when: _k8s_local_config_exist.stat.exists == True
+
+- name: Set default user key
+  set_fact:
+    _k8s_api_client_key_data_client: { stdout: 'EMPTY_KEY' }
+  when: _k8s_local_config_exist.stat.exists == False
+  changed_when: False
+
+- block:
+  - name: Create directory ~/.kube/backups
+    file:
+      path: "~/.kube/backups"
+      state: directory
+      mode: '0750'
+    when: _k8s_local_config_exist.stat.exists == True
+  - name: copy configs to backups directory
+    copy:
+      src: "~/.kube/config"
+      dest: "~/.kube/backups/config.{{ '%Y-%m-%d-%H-%M-%S' | strftime | hash('md5') }}"
+    when: _k8s_local_config_exist.stat.exists == True
+  - name: "Set cluster server to {{ k8s_context }}"
+    shell: "kubectl --kubeconfig ~/.kube/config config set clusters.{{ k8s_context }}.server https://{{ k8s_control_plane_endpoint }}:6443"
+  - name: "Set cluster server to {{ k8s_context }}"
+    shell: "kubectl --kubeconfig ~/.kube/config config set clusters.{{ k8s_context }}.server https://{{ k8s_control_plane_endpoint }}:6443"
+  - name: "Set cluster certificate-authority-data to {{ k8s_context }}"
+    shell: "kubectl --kubeconfig ~/.kube/config config set clusters.{{ k8s_context }}.certificate-authority-data {{ _k8s_api_certificate_authority_data_server.stdout|default('') }}"
+  - name: "Set contexts cluster to {{ k8s_context }}"
+    shell: "kubectl --kubeconfig ~/.kube/config config set contexts.{{ k8s_context }}.cluster {{ k8s_context }}"
+  - name: "Set contexts user to {{ k8s_context }}"
+    shell: "kubectl --kubeconfig ~/.kube/config config set contexts.{{ k8s_context }}.user {{ k8s_context }}"
+  - name: "Set user client-certificate-data to {{ k8s_context }}"
+    shell: "kubectl --kubeconfig ~/.kube/config config set users.{{ k8s_context }}.client-certificate-data {{ _k8s_api_client_certificate_data_server.stdout|default('') }}"
+  - name: "Set user client-key-data to {{ k8s_context }}"
+    shell: "kubectl --kubeconfig ~/.kube/config config set users.{{ k8s_context }}.client-key-data {{ _k8s_api_client_key_data_server.stdout|default('') }}"
+  - name: "Set user context to {{ k8s_context }}"
+    shell: "kubectl --kubeconfig ~/.kube/config config use-context {{ k8s_context }}"
+    when: _k8s_local_config_exist.stat.exists == False
+  become: false
+  delegate_to: localhost
+  when: _k8s_api_client_key_data_client.stdout != _k8s_api_client_key_data_server.stdout

@@ -1,0 +1,24 @@
+---
+
+# Ansible host group name
+k8s_ansible_group_name: k8s
+
+k8s_internal_network: 10.0.0.0/12
+
+k8s_context: "kubernetes"
+
+# cgroup type: systemd/cgroupfs
+k8s_cgroup_type: systemd
+
+# The IP address or hostname where the Kubernetes API will bind and accept incoming requests
+k8s_api_bind_address: "{{ ansible_default_ipv4.address }}"
+
+# Set a VIP for the Kubernetes API via HAProxy or Keepalived
+k8s_control_plane_endpoint: "{{ (groups[k8s_ansible_group_name] | default([]) | map('extract', hostvars ) | selectattr('k8s_role', 'search', 'INITMASTER') | map(attribute='inventory_hostname') | list)[0] }}"
+
+# Add address to api certificate + LB address (haproxy)
+k8s_apiserver_cert_extra_sans:
+  - 'localhost'
+  - '127.0.0.1'
+
+k8s_init_add_ignore_options: "Swap"

@@ -1,0 +1,9 @@
+---
+
+- name: Initializing Kubernetes cluster - join workers
+  ansible.builtin.shell: |
+    kubeadm join {{ k8s_kubernetes_init_hostname }}:6443 \
+      --token {{ k8s_kubeadm_init_token_key }} \
+      --discovery-token-ca-cert-hash {{ k8s_kubeadm_init_token_sha256 }} \
+      --ignore-preflight-errors={{ k8s_init_add_ignore_options }} \
+      --v=5 >> /root/kubeadm_output.log 2>&1 || (echo 'INIT FAILED:' && cat /root/kubeadm_output.log && exit 1)

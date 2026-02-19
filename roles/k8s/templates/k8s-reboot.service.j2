@@ -1,0 +1,19 @@
+[Unit]
+Description=Cleanup before reboot
+DefaultDependencies=no
+Before=reboot.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+TimeoutStartSec=120
+ExecStart=kubectl drain {{ inventory_hostname }} \
+    --timeout=2m \
+    --kubeconfig /etc/kubernetes/admin.conf \
+    --grace-period=-1 \
+    --delete-emptydir-data \
+    --ignore-daemonsets \
+    --force
+
+[Install]
+WantedBy=reboot.target

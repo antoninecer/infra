@@ -1,0 +1,22 @@
+---
+
+- name: Create a kubernetes-pki.tar.gz archive
+  archive:
+    path: /etc/kubernetes/pki/*
+    dest: /tmp/kubernetes-pki.tar.gz
+    format: gz
+
+- name: Set temp identificator
+  set_fact:
+    k8s_kubernetes_pki_hash: "{{ lookup('password','/dev/null chars=ascii_letters,digits length=32') }}"
+
+- name: copy /tmp/kubernetes-pki.tar.gz to local
+  fetch:
+    src: /tmp/kubernetes-pki.tar.gz
+    dest: "/tmp/{{ k8s_kubernetes_pki_hash }}.tar.gz"
+    flat: yes
+
+- name: Remove /tmp/kubernetes-pki.tar.gz
+  file:
+    path: /tmp/kubernetes-pki.tar.gz
+    state: absent

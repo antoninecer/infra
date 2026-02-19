@@ -1,0 +1,112 @@
+---
+
+- name: Verify if the host is membership of the '{{ k8s_ansible_group_name }}' group
+  fail:
+    msg: "The host is not membership of the '{{ k8s_ansible_group_name }}' group!"
+  when: inventory_hostname not in groups[k8s_ansible_group_name] | default([])
+
+- name: Check if swap is enabled. If it is, disable it using ‘swapoff -a’, update /etc/fstab, or disable it in Docker Desktop
+  shell: "swapon --summary"
+  register: swap_status
+  changed_when: false
+  failed_when: swap_status.stdout != ""
+
+- set_fact:
+    k8s_installed : False
+
+- stat: path="/etc/kubernetes/kubelet.conf"
+  register: k8s_exist
+
+- set_fact:
+    k8s_installed: "{{ k8s_exist.stat.exists }}"
+
+- set_fact:
+    k8s_master_cluster_address_list: []
+    k8s_worker_cluster_address_list: []
+    k8s_cluster_exists_new_master: False
+    k8s_cluster_exists_new_worker: False
+    k8s_kubeadm_admin_conf:
+    k8s_kubeadm_init_token_key:
+    k8s_kubeadm_init_token_sha256:
+    k8s_kubernetes_pki_hash:
+
+- name: find all master cluster hostname
+  run_once: True
+  set_fact:
+    k8s_master_cluster_address_list: "{{ k8s_master_cluster_address_list|default([]) + [ item ] }}"
+  loop: "{{ groups[k8s_ansible_group_name] | map('extract', hostvars ) | selectattr('k8s_role', 'search', 'MASTER') | map(attribute='inventory_hostname') | list | sort }}"
+
+- name: find all worker cluster hostname
+  run_once: True
+  set_fact:
+    k8s_worker_cluster_address_list: "{{ k8s_worker_cluster_address_list|default([]) + [ item ] }}"
+  loop: "{{ groups[k8s_ansible_group_name] | map('extract', hostvars ) | selectattr('k8s_role', 'search', 'WORKER') | map(attribute='inventory_hostname') | list | sort }}"
+
+- name: Check correct defined host group name
+  fail:
+    msg: "The {{ ansible_play_hosts_all }} group is probably not valid, it has less than two nodes!"
+  when: ansible_play_hosts_all | default([]) | length < 2
+
+- name: Checking the existing initmaster node
+  fail:
+    msg: "Required to have at least one node in the initmaster role!"
+  when: ansible_play_hosts_all | map('extract', hostvars ) | selectattr('k8s_role', 'search', 'INITMASTER') | length < 1
+
+- name: Checking the existing worker node
+  fail:
+    msg: "Required to have at least one node in the worker role!"
+  when: ansible_play_hosts_all | map('extract', hostvars ) | selectattr('k8s_role', 'search', 'WORKER') | length < 1
+
+- set_fact:
+    k8s_cluster_exists_new_master: True
+  loop: "{{ k8s_master_cluster_address_list }}"
+  when: hostvars[item].k8s_installed | default(True) == False
+
+- set_fact:
+    k8s_cluster_exists_new_worker: True
+  loop: "{{ k8s_worker_cluster_address_list }}"
+  when: hostvars[item].k8s_installed | default(True) == False
+
+- include_tasks: containerd.yml
+  when: k8s_installed == False
+
+- include_tasks: kubelet.yml
+  when: k8s_installed == False
+
+- include_tasks: init-master.yml
+  when: k8s_role == "INITMASTER"
+
+- include_tasks: kube-config.yml
+  when: k8s_role == "INITMASTER"
+
+- name: Get keys from init master
+  set_fact:
+    k8s_kubernetes_pki_hash: "{{ hostvars[item].k8s_kubernetes_pki_hash|default('') }}"
+    k8s_kubeadm_init_token_key: "{{ hostvars[item].k8s_kubeadm_init_token_key|default('') }}"
+    k8s_kubeadm_init_token_sha256: "{{ hostvars[item].k8s_kubeadm_init_token_sha256|default('') }}"
+    k8s_kubernetes_init_hostname: "{{ hostvars[item]['inventory_hostname'] }}"
+  loop: "{{ k8s_master_cluster_address_list | default([]) }}"
+  when: 
+    - k8s_installed == False
+    - hostvars[item]['k8s_role'] | default('UNKNOWN') == "INITMASTER"
+
+- name: Get admin keys from init master
+  set_fact:
+    k8s_kubeadm_admin_conf: "{{ hostvars[item].k8s_kubeadm_admin_conf | default('') }}"
+  loop: "{{ k8s_master_cluster_address_list | default([]) }}"
+  when: 
+    - hostvars[item]['k8s_role'] | default('UNKNOWN') == "INITMASTER"
+
+- include_tasks: join-masters.yml
+  when:
+    - k8s_installed == False
+    - k8s_role == "MASTER"
+
+- include_tasks: join-workers.yml
+  when:
+    - k8s_installed == False
+    - k8s_role == "WORKER"
+
+- include_tasks: init-workers.yml
+  when:
+    - k8s_role == "WORKER"

@@ -1,0 +1,8 @@
+---
+
+- name: Restart kubelet service
+  service:
+    name: 'kubelet.service'
+    state: restarted
+    enabled: yes
+  when: item == inventory_hostname

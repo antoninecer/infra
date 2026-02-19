@@ -1,0 +1,33 @@
+---
+# Variables for connecting to the Proxmox API.
+#
+# It is strongly recommended to use Ansible Vault to encrypt sensitive information
+# like API tokens or passwords. Do not store them here in plain text.
+#
+# You can create an encrypted file for your secrets like this:
+#   cd new_infra
+#   ansible-vault create group_vars/proxmox_secrets.yml
+#
+# Then, place your sensitive variables inside that file, for example:
+#   proxmox_api_password: "Your_Proxmox_API_Token_Secret_Or_Password"
+#
+# When you run your playbook, you will need to provide the vault password:
+#   ansible-playbook your_playbook.yml --ask-vault-pass
+#
+# Or you can use a password file:
+#   ansible-playbook your_playbook.yml --vault-password-file ~/.vault_pass.txt
+
+# Proxmox API connection details
+# Fill in the user and host. The password should be in the vault file.
+proxmox_api_user: "root@pam"
+proxmox_api_host: "{{ inventory_hostname }}"
+# proxmox_api_password: "YOUR_PASSWORD_HERE"  <- PUT THIS IN a vault file!
+
+# It's better to use an API token:
+# 1. In Proxmox, go to Datacenter -> Permissions -> API Tokens.
+# 2. Create a token for a user (e.g., root@pam).
+# 3. The user should be `root@pam` and the token ID is what you specify, e.g., `ansible`.
+# 4. The full user for ansible will be `root@pam!ansible`.
+# 5. The token secret is the password.
+# proxmox_api_user: "root@pam!ansible"
+# proxmox_api_password: "YOUR_API_TOKEN_SECRET" <- PUT THIS IN a vault file!

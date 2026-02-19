@@ -1,0 +1,7 @@
+- name: Dist upgrade
+  apt:
+    upgrade: dist
+    update_cache: yes
+    dpkg_options:
+      - force-confdef
+      - force-confold

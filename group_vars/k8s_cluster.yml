@@ -1,0 +1,18 @@
+---
+# Variables for the k8s_cluster group
+
+k8s_ansible_group_name: "k8s_cluster"
+
+# To assign roles to your nodes, you need to define the 'k8s_role' variable
+# for each host. You can do this in your inventory file ('hosts.ini') like this:
+#
+# [k8s_cluster]
+# k8s-master-1 ansible_host=192.168.1.10 k8s_role=INITMASTER
+# k8s-master-2 ansible_host=192.168.1.11 k8s_role=MASTER
+# k8s-worker-1 ansible_host=192.168.1.12 k8s_role=WORKER
+# k8s-worker-2 ansible_host=192.168.1.13 k8s_role=WORKER
+#
+# The k8s role uses these roles to decide which tasks to run on which host.
+# - INITMASTER: The first master node that initializes the cluster.
+# - MASTER: Other master nodes that join the cluster.
+# - WORKER: Worker nodes that join the cluster.

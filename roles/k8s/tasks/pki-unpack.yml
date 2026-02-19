@@ -1,0 +1,23 @@
+---
+
+- name: Ensure kubernetes pki directory exists
+  file:
+    path: "/etc/kubernetes/pki"
+    state: directory
+
+- name: Unarchive file /tmp/xtrabackup.tar.gz
+  unarchive:
+    src: "/tmp/{{ k8s_kubernetes_pki_hash }}.tar.gz"
+    dest: "/etc/kubernetes/pki"
+
+- name: Remove local temp files
+  file:
+    path: "{{ item }}"
+    state: absent
+  with_items:
+    - /etc/kubernetes/pki/apiserver.crt
+    - /etc/kubernetes/pki/apiserver.key
+    - /etc/kubernetes/pki/etcd/peer.crt
+    - /etc/kubernetes/pki/etcd/peer.key
+    - /etc/kubernetes/pki/etcd/server.crt
+    - /etc/kubernetes/pki/etcd/server.key

@@ -1,0 +1,5 @@
+proxmox_template_id: 9000
+proxmox_node: hpmini2
+proxmox_bridge: vmbr0
+proxmox_storage: local-lvm
+proxmox_ci_user: tonda

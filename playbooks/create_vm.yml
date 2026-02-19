@@ -1,0 +1,95 @@
+---
+- name: Create a new VM for our K8s cluster
+  hosts: localhost
+  gather_facts: false
+  vars:
+    # --- VM Configuration ---
+    # The Proxmox node where the VM will be created
+    proxmox_node: "hpmini" # Or hpmini1, hpmini2
+
+    # VM details
+    vm_name: "k8s-master-1"
+    vm_id: 1000 # Make sure this ID is unique in your Proxmox cluster
+    vm_template: "ubuntu-2204-cloud-template" # This is the "golden image"
+    vm_cores: 2
+    vm_memory: 4096 # in MB
+    vm_disk: "local-lvm:32" # Storage and size in GB
+    vm_bridge: "vmbr0" # Your network bridge
+
+    # SSH public key for accessing the VM
+    # Replace this with your actual public key
+    ssh_pub_key: "ssh-ed25519 AAAA..."
+
+  tasks:
+    - name: Ensure Proxmox connection details are set
+      fail:
+        msg: |
+          Proxmox API credentials are not set.
+          Please create a vault file at 'group_vars/proxmox_secrets.yml'
+          with your 'proxmox_api_password'.
+          See 'group_vars/proxmox.yml' for instructions.
+      when: proxmox_api_password is not defined
+
+    - name: Create a new KVM on Proxmox
+      community.general.proxmox_kvm:
+        api_user: "{{ proxmox_api_user }}"
+        api_password: "{{ proxmox_api_password }}"
+        api_host: "{{ proxmox_node }}"
+        
+        node: "{{ proxmox_node }}"
+        vmid: "{{ vm_id }}"
+        name: "{{ vm_name }}"
+        state: present
+
+        # This will clone the VM from the template (golden image)
+        clone: "{{ vm_template }}"
+        full: true # Create a full clone, not a linked clone
+
+        # Hardware configuration
+        cores: "{{ vm_cores }}"
+        memory: "{{ vm_memory }}"
+        
+        # Network configuration
+        net: {
+          "net0": "virtio,bridge={{ vm_bridge }}"
+        }
+
+        # Disk configuration
+        disks: {
+          "scsi0": {
+            "disk": "{{ vm_disk.split(':')[1] }}",
+            "storage": "{{ vm_disk.split(':')[0] }}",
+            "size": "{{ vm_disk.split(':')[1] }}G"
+          }
+        }
+        
+        # Cloud-Init configuration
+        # This will set up the user, password, and SSH key on the first boot
+        ipconfig: {
+          "ipconfig0": "ip=dhcp"
+        }
+        ciuser: "ubuntu"
+        sshkeys: "{{ ssh_pub_key }}"
+
+      register: vm_creation_result
+
+    - name: Wait for VM to be ready
+      wait_for:
+        host: "{{ vm_creation_result.ip }}"
+        port: 22
+        delay: 10
+        timeout: 300
+      when: vm_creation_result.ip is defined and vm_creation_result.ip != ""
+
+    - name: Add the new host to the k8s_cluster group
+      add_host:
+        name: "{{ vm_name }}"
+        groups: k8s_cluster
+        ansible_host: "{{ vm_creation_result.ip }}"
+        ansible_user: "ubuntu"
+      when: vm_creation_result.ip is defined and vm_creation_result.ip != ""
+
+    - name: Print the IP address of the new VM
+      debug:
+        msg: "VM '{{ vm_name }}' created with IP: {{ vm_creation_result.ip }}"
+      when: vm_creation_result.ip is defined and vm_creation_result.ip != ""

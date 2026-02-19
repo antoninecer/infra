@@ -1,0 +1,24 @@
+---
+
+- name: Generate containerd configuration
+  shell: |
+    containerd config default | tee /etc/containerd/config.toml
+
+- name: Replace cgroup variable in containerd config
+  replace:
+    path: /etc/containerd/config.toml
+    regexp: '^([^#].*?\SystemdCgroup\s+=)\s+.*$'
+    replace: '\1 {{ true|bool|lower if k8s_cgroup_type == "systemd" else false|bool|lower }}'
+
+- name: Replace snapshotter type in config file
+  ansible.builtin.replace:
+    path: /etc/containerd/config.toml
+    regexp: 'snapshotter\s*=\s*"overlayfs"'
+    replace: 'snapshotter = "native"'
+  when: ansible_facts.virtualization_type in [ 'docker', 'container' ]
+
+- name: Restart containerd service
+  service:
+    name: 'containerd.service'
+    state: restarted
+    enabled: yes
