@@ -52,17 +52,31 @@
         state: restarted
         enabled: true
 
-    - name: Add Kubernetes repo
-      shell: |
-        curl -fsSL https://pkgs.k8s.io/core:/stable:/v1.29/deb/Release.key \
-        | gpg --dearmor -o /usr/share/keyrings/kubernetes-archive-keyring.gpg
+    - name: Ensure keyring directory exists
+      file:
+        path: /etc/apt/keyrings
+        state: directory
+        mode: '0755'
 
-        echo "deb [signed-by=/usr/share/keyrings/kubernetes-archive-keyring.gpg] \
-        https://pkgs.k8s.io/core:/stable:/v1.29/deb/ /" \
-        > /etc/apt/sources.list.d/kubernetes.list
+    - name: Download Kubernetes GPG key
+      get_url:
+        url: https://pkgs.k8s.io/core:/stable:/v1.29/deb/Release.key
+        dest: /etc/apt/keyrings/kubernetes-apt-keyring.gpg
+        mode: '0644'
+
+    - name: Convert key to gpg format
+      command: >
+        gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg
+        /etc/apt/keyrings/kubernetes-apt-keyring.gpg
       args:
-        creates: /etc/apt/sources.list.d/kubernetes.list
+        creates: /etc/apt/keyrings/kubernetes-apt-keyring.gpg
 
+    - name: Add Kubernetes apt repository
+      apt_repository:
+        repo: "deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v1.29/deb/ /"
+        filename: kubernetes
+        state: present
+        
     - name: Install kubeadm, kubelet, kubectl
       apt:
         name:
