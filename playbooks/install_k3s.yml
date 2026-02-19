@@ -61,7 +61,7 @@
   become: true
   vars:
     k3s_version: "v1.29.7+k3s1"
-    api_ip: "192.168.15.10"
+    api_ip: "{{ ansible_host }}"
   tasks:
 
     - name: Check if k3s already installed
@@ -115,7 +115,7 @@
   become: true
   vars:
     k3s_version: "v1.29.7+k3s1"
-    api_ip: "192.168.15.10"
+    api_ip: "{{ hostvars['k8s01m01'].ansible_host }}"
   tasks:
 
     - name: Check if installed
@@ -142,7 +142,7 @@
   become: true
   vars:
     k3s_version: "v1.29.7+k3s1"
-    api_ip: "192.168.15.10"
+    api_ip: "{{ hostvars['k8s01m01'].ansible_host }}"
   tasks:
 
     - name: Check if agent installed
