@@ -1,39 +1,26 @@
 ---
-############################################################
-# BASE SETUP – ALL NODES
-############################################################
-
-- name: Base setup for all k8s nodes
+- name: Base prereqs on all k8s nodes
   hosts: k8s
   become: true
   tasks:
+    - name: Disable swap
+      shell: |
+        swapoff -a
+        sed -i '/ swap / s/^/#/' /etc/fstab
 
-    - name: Disable swap immediately
-      command: swapoff -a
-      when: ansible_swaptotal_mb > 0
-
-    - name: Disable swap permanently
-      replace:
-        path: /etc/fstab
-        regexp: '^(.*\sswap\s.*)$'
-        replace: '# \1'
-
-    - name: Ensure kernel modules file
+    - name: Load kernel modules
       copy:
         dest: /etc/modules-load.d/k8s.conf
         content: |
           overlay
           br_netfilter
 
-    - name: Load required modules
-      modprobe:
-        name: "{{ item }}"
-        state: present
-      loop:
-        - overlay
-        - br_netfilter
+    - name: Enable kernel modules now
+      shell: |
+        modprobe overlay
+        modprobe br_netfilter
 
-    - name: Configure sysctl for Kubernetes
+    - name: Sysctl for k8s
       copy:
         dest: /etc/sysctl.d/k8s.conf
         content: |
@@ -44,182 +31,82 @@
     - name: Apply sysctl
       command: sysctl --system
 
-    ########################################################
-    # CONTAINERD
-    ########################################################
-
-    - name: Install containerd
+    - name: Ensure curl is installed
       apt:
-        name: containerd
+        name: curl
         state: present
         update_cache: yes
 
-    - name: Ensure containerd config exists
-      command: containerd config default
-      register: containerd_default
-      changed_when: false
-      when: not (ansible_facts['files'] is defined and
-                ansible_facts['files'].get('/etc/containerd/config.toml'))
 
-    - name: Write containerd config if missing
-      copy:
-        dest: /etc/containerd/config.toml
-        content: "{{ containerd_default.stdout }}"
-      when: containerd_default is defined and containerd_default.stdout is defined
-
-    - name: Enable systemd cgroup driver
-      replace:
-        path: /etc/containerd/config.toml
-        regexp: 'SystemdCgroup = false'
-        replace: 'SystemdCgroup = true'
-
-    - name: Restart containerd
-      systemd:
-        name: containerd
-        state: restarted
-        enabled: true
-
-    ########################################################
-    # KUBERNETES REPO (FIXED GPG METHOD)
-    ########################################################
-
-    - name: Install required packages
-      apt:
-        name:
-          - apt-transport-https
-          - ca-certificates
-          - curl
-          - gnupg
-        state: present
-        update_cache: yes
-
-    - name: Ensure keyring directory exists
-      file:
-        path: /etc/apt/keyrings
-        state: directory
-        mode: '0755'
-
-    - name: Download Kubernetes GPG key (new method)
+- name: Install first K3s server (cluster-init)
+  hosts: k8s01m01
+  become: true
+  vars:
+    k3s_version: "v1.29.7+k3s1"
+    k3s_tls_san: "192.168.15.10"
+  tasks:
+    - name: Install K3s server (cluster-init)
       shell: |
-        curl -fsSL https://pkgs.k8s.io/core:/stable:/v1.29/deb/Release.key \
-        | gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg
+        curl -sfL https://get.k3s.io | \
+          INSTALL_K3S_VERSION="{{ k3s_version }}" \
+          sh -s - server \
+            --cluster-init \
+            --tls-san "{{ k3s_tls_san }}" \
+            --write-kubeconfig-mode 644
       args:
-        creates: /etc/apt/keyrings/kubernetes-apt-keyring.gpg
+        creates: /etc/systemd/system/k3s.service
 
-    - name: Add Kubernetes apt repository
+    - name: Read node token
+      slurp:
+        src: /var/lib/rancher/k3s/server/node-token
+      register: node_token_raw
+
+    - name: Set token fact
+      set_fact:
+        k3s_token: "{{ node_token_raw.content | b64decode | trim }}"
+
+    - name: Save kubeconfig for later use on this node
       copy:
-        dest: /etc/apt/sources.list.d/kubernetes.list
-        content: |
-          deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v1.29/deb/ /
-
-    - name: Install kubeadm, kubelet, kubectl
-      apt:
-        name:
-          - kubelet
-          - kubeadm
-          - kubectl
-        state: present
-        update_cache: yes
-
-    - name: Hold Kubernetes packages
-      command: apt-mark hold kubelet kubeadm kubectl
-      changed_when: false
-
-
-############################################################
-# INIT FIRST CONTROL PLANE
-############################################################
-
-- name: Initialize first control-plane
-  hosts: k8s01m01
-  become: true
-  tasks:
-
-    - name: Check if cluster already initialized
-      stat:
-        path: /etc/kubernetes/admin.conf
-      register: cluster_initialized
-
-    - name: Initialize cluster
-      command: >
-        kubeadm init
-        --control-plane-endpoint "192.168.15.10:6443"
-        --upload-certs
-        --pod-network-cidr=192.168.0.0/16
-      when: not cluster_initialized.stat.exists
-
-    - name: Ensure .kube directory exists
-      file:
-        path: /root/.kube
-        state: directory
-        mode: '0700'
-
-    - name: Copy kubeconfig
-      copy:
-        src: /etc/kubernetes/admin.conf
+        src: /etc/rancher/k3s/k3s.yaml
         dest: /root/.kube/config
-        remote_src: yes
-
-    - name: Install Calico (only once)
-      command: >
-        kubectl apply -f https://raw.githubusercontent.com/projectcalico/calico/v3.27.2/manifests/calico.yaml
-      environment:
-        KUBECONFIG: /etc/kubernetes/admin.conf
-      when: not cluster_initialized.stat.exists
+        remote_src: true
+      vars:
+        ansible_python_interpreter: /usr/bin/python3
+      ignore_errors: true
 
 
-############################################################
-# GENERATE JOIN COMMAND ONCE
-############################################################
-
-- name: Get join command
-  hosts: k8s01m01
-  become: true
-  tasks:
-
-    - name: Generate join command
-      command: kubeadm token create --print-join-command
-      register: join_cmd
-
-    - set_fact:
-        join_command: "{{ join_cmd.stdout }}"
-
-
-############################################################
-# JOIN ADDITIONAL CONTROL PLANES
-############################################################
-
-- name: Join additional control-plane nodes
+- name: Join additional K3s servers (HA masters)
   hosts: control_plane:!k8s01m01
   become: true
+  vars:
+    k3s_version: "v1.29.7+k3s1"
+    k3s_url: "https://192.168.15.10:6443"
   tasks:
-
-    - name: Check if already joined
-      stat:
-        path: /etc/kubernetes/kubelet.conf
-      register: joined
-
-    - name: Join control plane
-      command: >
-        {{ hostvars['k8s01m01'].join_command }}
-        --control-plane
-      when: not joined.stat.exists
+    - name: Install K3s server (join)
+      shell: |
+        curl -sfL https://get.k3s.io | \
+          INSTALL_K3S_VERSION="{{ k3s_version }}" \
+          K3S_URL="{{ k3s_url }}" \
+          K3S_TOKEN="{{ hostvars['k8s01m01'].k3s_token }}" \
+          sh -s - server
+      args:
+        creates: /etc/systemd/system/k3s.service
 
 
-############################################################
-# JOIN WORKERS
-############################################################
-
-- name: Join worker nodes
+- name: Join K3s agents (workers)
   hosts: workers
   become: true
+  vars:
+    k3s_version: "v1.29.7+k3s1"
+    k3s_url: "https://192.168.15.10:6443"
   tasks:
+    - name: Install K3s agent (join)
+      shell: |
+        curl -sfL https://get.k3s.io | \
+          INSTALL_K3S_VERSION="{{ k3s_version }}" \
+          K3S_URL="{{ k3s_url }}" \
+          K3S_TOKEN="{{ hostvars['k8s01m01'].k3s_token }}" \
+          sh -s - agent
+      args:
+        creates: /etc/systemd/system/k3s-agent.service
 
-    - name: Check if already joined
-      stat:
-        path: /etc/kubernetes/kubelet.conf
-      register: joined
-
-    - name: Join worker
-      command: "{{ hostvars['k8s01m01'].join_command }}"
-      when: not joined.stat.exists

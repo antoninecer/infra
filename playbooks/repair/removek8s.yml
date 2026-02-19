@@ -1,0 +1,20 @@
+- name: Remove broken Kubernetes repo
+  hosts: k8s
+  become: true
+  tasks:
+    - name: Remove kubernetes apt repo file
+      file:
+        path: /etc/apt/sources.list.d/kubernetes.list
+        state: absent
+
+    - name: Remove any leftover k8s repo files
+      shell: rm -f /etc/apt/sources.list.d/*kubernetes*
+      ignore_errors: true
+
+    - name: Clean apt cache
+      command: apt-get clean
+
+    - name: Update apt cache
+      apt:
+        update_cache: yes
+
