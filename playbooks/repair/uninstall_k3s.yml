@@ -1,0 +1,43 @@
+---
+- name: Full K3s uninstall on all nodes
+  hosts: k8s
+  become: true
+  tasks:
+
+    - name: Stop k3s service if exists
+      service:
+        name: k3s
+        state: stopped
+      ignore_errors: true
+
+    - name: Stop k3s-agent service if exists
+      service:
+        name: k3s-agent
+        state: stopped
+      ignore_errors: true
+
+    - name: Run k3s uninstall script (server)
+      command: /usr/local/bin/k3s-uninstall.sh
+      ignore_errors: true
+
+    - name: Run k3s uninstall script (agent)
+      command: /usr/local/bin/k3s-agent-uninstall.sh
+      ignore_errors: true
+
+    - name: Remove leftover directories
+      file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - /etc/rancher
+        - /var/lib/rancher
+        - /var/lib/kubelet
+        - /etc/kubernetes
+        - /run/k3s
+        - /usr/local/bin/k3s
+        - /usr/local/bin/kubectl
+      ignore_errors: true
+
+    - name: Reload systemd
+      command: systemctl daemon-reload
+
