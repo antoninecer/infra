@@ -1,0 +1,30 @@
+- name: Deploy Traefik dashboard
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  vars:
+    kubeconfig_path: /home/tonda/.kube/config
+
+  tasks:
+
+    - name: Create traefik basic auth secret
+      kubernetes.core.k8s:
+        kubeconfig: "{{ kubeconfig_path }}"
+        state: present
+        definition:
+          apiVersion: v1
+          kind: Secret
+          metadata:
+            name: traefik-auth
+            namespace: kube-system
+          type: Opaque
+          data:
+            users: "{{ lookup('file', '../files/traefik-users') | b64encode }}"
+
+    - name: Deploy Traefik dashboard
+      kubernetes.core.k8s:
+        kubeconfig: "{{ kubeconfig_path }}"
+        state: present
+        src: ../k8s/traefik-dashboard.yaml
+
