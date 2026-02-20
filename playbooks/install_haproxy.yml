@@ -1,0 +1,24 @@
+---
+- name: Install and configure HAProxy for K8S
+  hosts: loadbalancers
+  become: true
+
+  tasks:
+
+    - name: Install HAProxy
+      apt:
+        name: haproxy
+        state: present
+        update_cache: yes
+
+    - name: Deploy HAProxy config
+      template:
+        src: ../templates/haproxy.cfg.j2
+        dest: /etc/haproxy/haproxy.cfg
+
+    - name: Enable and restart HAProxy
+      systemd:
+        name: haproxy
+        enabled: true
+        state: restarted
+
